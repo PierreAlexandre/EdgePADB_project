@@ -9,7 +9,7 @@ services:
     working_dir: /workspaces
     command: >
       /bin/bash -c "mkdir -p /workspaces/metrics && 
-      /usr/local/bin/node_exporter --collector.textfile.directory=/workspaces/metrics --log.level=debug"
+      /usr/local/bin/node_exporter --collector.textfile.directory=/workspaces/metrics"
     networks:
       - shared-network
     environment:

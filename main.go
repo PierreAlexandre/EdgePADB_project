@@ -91,7 +91,7 @@ func countOpenIPv4Connections(port int) int {
 
 		// Extract port number from remote address
 		extractedPort, err := extractIPv4Port(remoteAddr)
-		if err == nil && extractedPort == port && state == "ESTABLISHED" {
+		if err == nil && extractedPort == port && (state != "TIME_WAIT"){
 			count++
 		}
 	}
@@ -123,7 +123,7 @@ func writeMetrics(count int) {
 	}
 	defer file.Close()
 
-	metricContent := fmt.Sprintf("# HELP tcp_connections Number of established TCP connections on port %d\n", consulPort)
+	metricContent := fmt.Sprintf("# HELP tcp_connections Number of open TCP connections on port %d\n", consulPort)
 	metricContent += "# TYPE tcp_connections gauge\n"
 	metricContent += fmt.Sprintf("tcp_connections{port=\"%d\"} %d\n", consulPort, count)
 

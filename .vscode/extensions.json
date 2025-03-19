@@ -1,7 +1,6 @@
 {
     "recommendations": [
         "golang.go",
-        "qwtel.sqlite-viewer",
         "ms-vscode-remote.remote-containers"
     ]
 }

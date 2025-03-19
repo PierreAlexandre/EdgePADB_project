@@ -1,4 +1,3 @@
-# Use the latest Debian base image
 FROM debian:latest
 
 # Install necessary dependencies
