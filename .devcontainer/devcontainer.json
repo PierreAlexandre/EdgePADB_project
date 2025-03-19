@@ -1,0 +1,21 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go
+{
+	"name": "EdgeDB",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "devcontainer",
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"features": {
+		"ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
+			"packages": "netcat-traditional,socat"
+		}		
+	},
+	"updateContentCommand": "go mod download",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"golang.go",
+			]
+		}
+	},
+}
