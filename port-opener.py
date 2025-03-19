@@ -19,7 +19,7 @@ async def main():
     logging.basicConfig(format="%(message)s", level=level)
 
     if args.ipv == 4:
-        host = "127.0.0.1"
+        host = "0.0.0.0"
         family = socket.AF_INET
     elif args.ipv == 6:
         host = "::1"

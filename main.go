@@ -1,62 +1,117 @@
 package main
 
 import (
-	"bytes"
-	"flag"
+	"bufio"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// netstatRegex extracts active TCP connections for a specific port
-var netstatRegex = regexp.MustCompile(`tcp\s+\d+\s+\d+\s+[\d\.:]+\:(\d+)\s+[\d\.:]+\:\d+\s+(\w+)`)
+// Default settings
+const (
+	defaultConsulPort  = 8500             // Target port as an integer
+	defaultUpdateDelay = 1 * time.Second // Update interval
+)
 
-func main() {
-	portFlag := flag.Int("port", 8500, "Port to monitor connections on")
-	hostFlag := flag.String("host", "port-opener", "Host running the service")
-	flag.Parse()
+var (
+	consulPort  int
+	updateDelay time.Duration
+)
 
-	fmt.Printf("Monitoring connections on %s:%d\n", *hostFlag, *portFlag)
-
-	count, err := countOpenConnections(*portFlag)
-	if err != nil {
-		log.Fatalf("Error counting connections: %v\n", err)
+func init() {
+	// Use environment variable for port if available
+	if portStr, exists := os.LookupEnv("CONSUL_PORT"); exists {
+		port, err := strconv.Atoi(portStr)
+		if err == nil {
+			consulPort = port
+		} else {
+			log.Printf("Invalid CONSUL_PORT value, using default: %d", defaultConsulPort)
+			consulPort = defaultConsulPort
+		}
+	} else {
+		consulPort = defaultConsulPort
 	}
 
-	fmt.Printf("# HELP consul_open_http_connections Number of non-TIME_WAIT TCP connections to the specified port\n")
-	fmt.Printf("# TYPE consul_open_http_connections gauge\n")
-	fmt.Printf("consul_open_http_connections %d\n", count)
+	// Use environment variable for update delay if available
+	if delayStr, exists := os.LookupEnv("UPDATE_DELAY"); exists {
+		delay, err := time.ParseDuration(delayStr)
+		if err == nil {
+			updateDelay = delay
+		} else {
+			log.Printf("Invalid UPDATE_DELAY value, using default: %s", defaultUpdateDelay)
+			updateDelay = defaultUpdateDelay
+		}
+	} else {
+		updateDelay = defaultUpdateDelay
+	}
+
+	log.Printf("Starting connection monitor:")
+	log.Printf(" - IPv4-Only Mode")
+	log.Printf(" - Monitoring Port: %d", consulPort)
+	log.Printf(" - Update Interval: %s", updateDelay)
 }
 
-// countOpenConnections runs netstat and counts TCP connections for the specified port.
-func countOpenConnections(port int) (int, error) {
-	cmd := exec.Command("netstat", "-tn")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
+func main() {
+	ticker := time.NewTicker(updateDelay)
+	defer ticker.Stop()
+
+	for {
+		count := countOpenIPv4Connections(consulPort)
+		log.Printf("Open IPv4 connections to port %d: %d\n", consulPort, count)
+		<-ticker.C
+	}
+}
+
+// countOpenIPv4Connections runs `ss -tan` and counts active ESTABLISHED IPv4 connections.
+func countOpenIPv4Connections(port int) int {
+	cmd := exec.Command("ss", "-tan4") // -4 ensures only IPv4 connections
+	out, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		log.Printf("Error executing ss command: %v", err)
+		return -1
 	}
 
-	lines := strings.Split(out.String(), "\n")
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	count := 0
 
-	for _, line := range lines {
-		matches := netstatRegex.FindStringSubmatch(line)
-		if len(matches) < 3 {
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 5 { // Ensure we have at least 5 fields
 			continue
 		}
 
-		connPort, _ := strconv.Atoi(matches[1])
-		state := matches[2]
+		state := fields[0]      // e.g., "ESTAB"
+		remoteAddr := fields[4] // Remote (peer) address (this is what we need)
 
-		if connPort == port && state != "TIME_WAIT" {
-			count++
+		// Extract the port from the remote address (peer)
+		extractedPort, err := extractIPv4Port(remoteAddr)
+		if err == nil && extractedPort == port {
+			if state == "ESTAB" { // Only count established connections
+				count++
+			}
 		}
 	}
 
-	return count, nil
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading ss output: %v", err)
+	}
+
+	return count
+}
+
+
+// extractIPv4Port extracts the port number from an IPv4 address string
+func extractIPv4Port(address string) (int, error) {
+	parts := strings.Split(address, ":")
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("invalid address format: %s", address)
+	}
+
+	portStr := parts[len(parts)-1]
+	return strconv.Atoi(portStr)
 }

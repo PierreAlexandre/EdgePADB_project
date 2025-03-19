@@ -1,8 +1,35 @@
 services:
   devcontainer:
-    image: mcr.microsoft.com/devcontainers/go:1-bookworm
+    image: mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
+    container_name: devcontainer
     volumes:
-      - ../../..:/workspaces:cached
-    # Overrides default command so things don't shut down after the process ends.
+      - ../../..:/workspaces  # Mounts the full repo into /workspaces
+    working_dir: /workspaces
     command: sleep infinity
+    depends_on:
+      - port-opener
+    networks:
+      - shared-network
+    environment:
+      - CONSUL_PORT=:8500
+      - UPDATE_DELAY=1s
+  port-opener:
+    image: debian:latest  # Using Debian as the base image
+    container_name: port_opener
+    volumes:
+      - ../:/workspaces
+    working_dir: /workspaces
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+       - |
+        apt update && apt install -y python3 && \
+        python3 port-opener.py --port 8500 --num-connections 100 --ipv 4
+    networks:
+      - shared-network
+    ports:
+      - "8500:8500"
+    restart: unless-stopped
 
+networks:
+  shared-network:
+    driver: bridge
