@@ -13,8 +13,9 @@ import (
 
 // Default settings
 const (
-	defaultConsulPort  = 8500             // Target port as an integer
-	defaultUpdateDelay = 1 * time.Second // Update interval
+	defaultConsulPort  = 8500
+	defaultUpdateDelay = 1 * time.Second
+	metricsFile        = "/workspaces/metrics/tcp_connections.prom" // Prometheus textfile
 )
 
 var (
@@ -49,8 +50,7 @@ func init() {
 		updateDelay = defaultUpdateDelay
 	}
 
-	log.Printf("Starting connection monitor:")
-	log.Printf(" - IPv4-Only Mode")
+	log.Printf("Starting Prometheus TCP connection exporter:")
 	log.Printf(" - Monitoring Port: %d", consulPort)
 	log.Printf(" - Update Interval: %s", updateDelay)
 }
@@ -62,16 +62,17 @@ func main() {
 	for {
 		count := countOpenIPv4Connections(consulPort)
 		log.Printf("Open IPv4 connections to port %d: %d\n", consulPort, count)
+		writeMetrics(count)
 		<-ticker.C
 	}
 }
 
-// countOpenIPv4Connections runs `ss -tan` and counts active ESTABLISHED IPv4 connections.
+// countOpenIPv4Connections runs `netstat -tan` and counts active ESTABLISHED IPv4 connections.
 func countOpenIPv4Connections(port int) int {
-	cmd := exec.Command("ss", "-tan4") // -4 ensures only IPv4 connections
+	cmd := exec.Command("netstat", "-tan")
 	out, err := cmd.Output()
 	if err != nil {
-		log.Printf("Error executing ss command: %v", err)
+		log.Printf("Error executing netstat command: %v", err)
 		return -1
 	}
 
@@ -81,29 +82,26 @@ func countOpenIPv4Connections(port int) int {
 	for scanner.Scan() {
 		line := scanner.Text()
 		fields := strings.Fields(line)
-		if len(fields) < 5 { // Ensure we have at least 5 fields
+		if len(fields) < 6 {
 			continue
 		}
 
-		state := fields[0]      // e.g., "ESTAB"
-		remoteAddr := fields[4] // Remote (peer) address (this is what we need)
+		state := fields[5]
+		remoteAddr := fields[3] // Remote address, should be ":8500"
 
-		// Extract the port from the remote address (peer)
+		// Extract port number from remote address
 		extractedPort, err := extractIPv4Port(remoteAddr)
-		if err == nil && extractedPort == port {
-			if state == "ESTAB" { // Only count established connections
-				count++
-			}
+		if err == nil && extractedPort == port && state == "ESTABLISHED" {
+			count++
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("Error reading ss output: %v", err)
+		log.Printf("Error reading netstat output: %v", err)
 	}
 
 	return count
 }
-
 
 // extractIPv4Port extracts the port number from an IPv4 address string
 func extractIPv4Port(address string) (int, error) {
@@ -114,4 +112,23 @@ func extractIPv4Port(address string) (int, error) {
 
 	portStr := parts[len(parts)-1]
 	return strconv.Atoi(portStr)
+}
+
+// writeMetrics writes the TCP connection count to the Prometheus metrics file
+func writeMetrics(count int) {
+	file, err := os.Create(metricsFile)
+	if err != nil {
+		log.Printf("Error writing to metrics file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	metricContent := fmt.Sprintf("# HELP tcp_connections Number of established TCP connections on port %d\n", consulPort)
+	metricContent += "# TYPE tcp_connections gauge\n"
+	metricContent += fmt.Sprintf("tcp_connections{port=\"%d\"} %d\n", consulPort, count)
+
+	_, err = file.WriteString(metricContent)
+	if err != nil {
+		log.Printf("Error writing metric content: %v", err)
+	}
 }

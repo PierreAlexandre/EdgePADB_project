@@ -3,25 +3,24 @@ services:
     image: mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
     container_name: devcontainer
     volumes:
-      - ../../..:/workspaces  # Mounts the full repo into /workspaces
+      - .:/workspaces  # Mounts the full repo into /workspaces
     working_dir: /workspaces
     command: sleep infinity
-    depends_on:
-      - port-opener
     networks:
       - shared-network
     environment:
-      - CONSUL_PORT=:8500
+      - CONSUL_PORT=8500
       - UPDATE_DELAY=1s
+      
   port-opener:
-    image: debian:latest  # Using Debian as the base image
+    image: debian:latest
     container_name: port_opener
     volumes:
-      - ../:/workspaces
-    working_dir: /workspaces
+      - "./port-opener:/workspaces/port-opener"
+    working_dir: "/workspaces/port-opener"
     entrypoint: ["/bin/bash", "-c"]
     command:
-       - |
+      - |
         apt update && apt install -y python3 && \
         python3 port-opener.py --port 8500 --num-connections 100 --ipv 4
     networks:
@@ -29,6 +28,21 @@ services:
     ports:
       - "8500:8500"
     restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - shared-network
+    restart: always
+
+
 
 networks:
   shared-network:
