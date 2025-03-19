@@ -1,17 +1,24 @@
 services:
   devcontainer:
-    image: mcr.microsoft.com/devcontainers/go:1-1.23-bookworm
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: devcontainer
     volumes:
       - .:/workspaces  # Mounts the full repo into /workspaces
     working_dir: /workspaces
-    command: sleep infinity
+    command: >
+      /bin/bash -c "mkdir -p /workspaces/metrics && 
+      /usr/local/bin/node_exporter --collector.textfile.directory=/workspaces/metrics --log.level=debug"
     networks:
       - shared-network
     environment:
       - CONSUL_PORT=8500
       - UPDATE_DELAY=1s
-      
+    ports:
+      - "9100:9100"  # Expose Node Exporter for Prometheus
+    restart: always
+
   port-opener:
     image: debian:latest
     container_name: port_opener
@@ -41,8 +48,6 @@ services:
     networks:
       - shared-network
     restart: always
-
-
 
 networks:
   shared-network:

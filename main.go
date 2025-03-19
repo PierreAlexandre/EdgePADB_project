@@ -87,7 +87,7 @@ func countOpenIPv4Connections(port int) int {
 		}
 
 		state := fields[5]
-		remoteAddr := fields[3] // Remote address, should be ":8500"
+		remoteAddr := fields[4] // Remote address, should be ":8500"
 
 		// Extract port number from remote address
 		extractedPort, err := extractIPv4Port(remoteAddr)
